@@ -71,15 +71,12 @@ static inline int doLookChar(JPXStreamPrivate* priv) {
   if (unlikely(priv->counter >= priv->npixels))
     return EOF;
 
-  return ((unsigned char *)priv->image->comps[priv->ccounter].data)[priv->counter];
+  return ((unsigned char *)priv->image->comps[0].data)[priv->counter];
 }
 
 static inline int doGetChar(JPXStreamPrivate* priv) {
   const int result = doLookChar(priv);
-  if (++priv->ccounter == priv->ncomps) {
-    priv->ccounter = 0;
-    ++priv->counter;
-  }
+  ++priv->counter;
   return result;
 }
 
@@ -122,12 +119,29 @@ void JPXStream::close() {
 }
 
 Goffset JPXStream::getPos() {
-  return priv->counter * priv->ncomps + priv->ccounter;
+  return priv->counter;
 }
 
 int JPXStream::getChars(int nChars, Guchar *buffer) {
   if (unlikely(priv->inited == gFalse)) { init(); }
 
+  int maximum = nChars;
+  int left = priv->npixels*priv->ncomps - priv->counter;
+  if (maximum > left)
+      maximum = left;
+
+  if (maximum == 0)
+      return EOF;
+  unsigned char *src = (unsigned char *)priv->image->comps[0].data;
+  memcpy(buffer, src + priv->counter, maximum);
+  priv->counter += maximum;
+
+  return maximum;
+
+  if (unlikely(priv->counter >= priv->npixels))
+    return EOF;
+
+  return ((unsigned char *)priv->image->comps[0].data)[priv->counter];
   for (int i = 0; i < nChars; ++i) {
     const int c = doGetChar(priv);
     if (likely(c != EOF)) buffer[i] = c;
@@ -406,7 +420,7 @@ void JPXStream::init()
         close();
         break;
       }
-      unsigned char *cdata = (unsigned char *)priv->image->comps[component].data;
+      unsigned char *cdata = (unsigned char *)priv->image->comps[0].data + component;
       int adjust = 0;
       int depth = priv->image->comps[component].prec;
       if (priv->image->comps[component].prec > 8)
@@ -416,7 +430,9 @@ void JPXStream::init()
 	sgndcorr = 1 << (priv->image->comps[0].prec - 1);
       for (int i = 0; i < priv->npixels; i++) {
 	int r = priv->image->comps[component].data[i];
-	*(cdata++) = adjustComp(r, adjust, depth, sgndcorr, priv->indexed);
+	*(cdata) = (unsigned char) r;
+        cdata += 3;
+	//*(cdata++) = adjustComp(r, adjust, depth, sgndcorr, priv->indexed);
       }
     }
   } else {
